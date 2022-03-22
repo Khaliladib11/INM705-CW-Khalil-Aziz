@@ -1,1 +1,7 @@
 /data
+
+/.ipynb_checkpoints
+/__pycache__
+/Datasets/
+
+.jovianrc
