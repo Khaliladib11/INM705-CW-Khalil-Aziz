@@ -14,14 +14,38 @@ from PIL import Image
 class CityScapesInterface(data.Dataset):
 
     # constructor
-    def __init__(self, data_root, list_of_classes, labels):
+    def __init__(self, 
+                 data_root,
+                 list_of_classes,
+                 labels,
+                 phase,
+                 task,
+                 mean_transform=[0.407, 0.457, 0.485],
+                 std_transform=[0.229,0.224,0.225]):
+        
         self.data_root = data_root
         self.list_of_classes = list_of_classes
         self.label2id = labels.label2id
         self.id2label = labels.id2label
 
+        if phase == 'test':
+            self.phase = 'test'
+        elif phase == 'val':
+            self.phase = 'val'
+        else:
+            self.phase = 'train'
 
-        self.cities = os.listdir(os.path.join(self.data_root, 'leftImg8bit/train'))
+        if task == 'instance':
+            self.task = 'instance'
+        elif task == 'semantic':
+            self.task = 'semantic'
+        else:
+            self.task = 'Object Detection'
+           
+        self.mean_transform = mean_transform
+        self.std_transform = std_transform
+
+        self.cities = os.listdir(os.path.join(self.data_root, 'leftImg8bit', self.phase))
         self.imgs = self.__getAllImages()
         self.semantic_masks = self.__load_semantic_masks()
         self.instance_masks = self.__load_instance_masks()
@@ -41,7 +65,7 @@ class CityScapesInterface(data.Dataset):
     def __getAllImages(self):
         imgs = []
         for city in self.cities:
-            city_imgs = os.listdir(os.path.join(self.data_root, 'leftImg8bit/train', city))
+            city_imgs = os.listdir(os.path.join(self.data_root, 'leftImg8bit', self.phase, city))
             imgs.extend(city_imgs)
 
         return imgs
@@ -50,7 +74,7 @@ class CityScapesInterface(data.Dataset):
     def __load_semantic_masks(self):
         semantic_masks = []
         for city in self.cities:
-            masks = os.listdir(os.path.join(self.data_root, 'gtFine/train', city))
+            masks = os.listdir(os.path.join(self.data_root, 'gtFine', self.phase, city))
             for file in masks:
                 if file.endswith('labelIds.png'):
                     semantic_masks.append(file)
@@ -61,7 +85,7 @@ class CityScapesInterface(data.Dataset):
     def __load_instance_masks(self):
         instance_masks = []
         for city in self.cities:
-            masks = os.listdir(os.path.join(self.data_root, 'gtFine/train', city))
+            masks = os.listdir(os.path.join(self.data_root, 'gtFine', self.phase, city))
             for file in masks:
                 if file.endswith('instanceIds.png'):
                     instance_masks.append(file)
@@ -72,7 +96,7 @@ class CityScapesInterface(data.Dataset):
     def __load_annotation_files(self):
         annotation_files = []
         for city in self.cities:
-            files = os.listdir(os.path.join(self.data_root, 'gtFine/train', city))
+            files = os.listdir(os.path.join(self.data_root, 'gtFine', self.phase, city))
             for file in files:
                 if file.endswith('.json'):
                     annotation_files.append(file)
@@ -82,25 +106,26 @@ class CityScapesInterface(data.Dataset):
     def image_transform(self, img):
         t_ = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(mean=[0.407, 0.457, 0.485],
-                                 std=[0.229,0.224,0.225])
+            transforms.Normalize(mean = self.mean_transform,
+                                 std = self.std_transform)
         ])
         img = t_(img)
         return img
 
     # Load an image
-    def load_img(self, idx):
+    def load_img(self, idx, transform=True):
         img = self.imgs[idx]
         city_name = img.split('_')[0]
-        im = Image.open(os.path.join(self.data_root, 'leftImg8bit/train', city_name, img))
-        im = self.image_transform(im)
+        im = Image.open(os.path.join(self.data_root, 'leftImg8bit', self.phase, city_name, img))
+        if transform:
+            im = self.image_transform(im)    
         return im
 
     # Get Bounding boxes
     def load_bounding_boxes(self, idx):
         annotation_file = self.annotation_files[idx]
         city_name = annotation_file.split('_')[0]
-        bbox_json = open(os.path.join(self.data_root, 'gtFine/train', city_name, annotation_file))
+        bbox_json = open(os.path.join(self.data_root, 'gtFine', self.phase, city_name, annotation_file))
         data = json.load(bbox_json)
         objects = data['objects']
         list_of_objects = []
@@ -109,7 +134,7 @@ class CityScapesInterface(data.Dataset):
             # print(obj)
             if obj['label'] in self.list_of_classes[1:]:
                 # print(obj)
-                list_of_objects.append(self.label2id[obj['label']])
+                list_of_objects.append(self.class_to_idx[self.label2id[obj['label']]])
                 x, y = zip(*obj['polygon'])
                 min_x, max_x = min(x), max(x)
                 min_y, max_y = min(y), max(y)
@@ -125,7 +150,7 @@ class CityScapesInterface(data.Dataset):
     def load_semantic_mask(self, idx):
         semantic_mask_file = self.semantic_masks[idx]
         city_name = semantic_mask_file.split('_')[0]
-        mask = np.array(Image.open(os.path.join(self.data_root, 'gtFine/train', city_name, semantic_mask_file)))
+        mask = np.array(Image.open(os.path.join(self.data_root, 'gtFine', self.phase, city_name, semantic_mask_file)))
         unique_values = np.unique(mask)
         for label in unique_values:
             _l = self.id2label[label]
@@ -142,7 +167,7 @@ class CityScapesInterface(data.Dataset):
     def load_instance_masks(self, idx):
         instance_mask_file = self.instance_masks[idx]
         city_name = instance_mask_file.split('_')[0]
-        mask = np.array(Image.open(os.path.join(self.data_root, 'gtFine/train', city_name, instance_mask_file)), dtype=np.uint8)
+        mask = np.array(Image.open(os.path.join(self.data_root, 'gtFine', self.phase, city_name, instance_mask_file)), dtype=np.uint8)
         mask = torch.tensor(mask, dtype=torch.uint8)
 
         _mask_segmentation = self.load_semantic_mask(idx)
@@ -171,11 +196,19 @@ class CityScapesInterface(data.Dataset):
 
         return list_of_masks
 
+    # method to return bounding boxes and semantic mask
+    def semantic_segmentation_task(self, idx):
+        label = self.load_bounding_boxes(idx)
+        semantic_mask = self.load_semantic_mask(idx)
+
+        label['mask'] = semantic_mask
+        return label
+
     # method to return bounding boxes and instance masks
-    def load_boundingBoxes_and_masks(self, idx):
+    def instance_segmentation_task(self, idx):
         instance_mask_file = self.instance_masks[idx]
         city_name = instance_mask_file.split('_')[0]
-        instance_mask = np.array(Image.open(os.path.join(self.data_root, 'gtFine/train', city_name, instance_mask_file)), dtype=np.uint8)
+        instance_mask = np.array(Image.open(os.path.join(self.data_root, 'gtFine', self.phase, city_name, instance_mask_file)), dtype=np.uint8)
         semantic_mask_img = self.load_semantic_mask(idx)
 
         final_mask = semantic_mask_img * instance_mask
@@ -206,5 +239,14 @@ class CityScapesInterface(data.Dataset):
     # get an item
     def __getitem__(self, idx):
         X = self.load_img(idx)
-        y = self.load_boundingBoxes_and_masks(idx)
+
+        if self.task == 'instance':
+            y = self.instance_segmentation_task(idx)
+
+        elif self.task == 'semantic':
+            y = self.semantic_segmentation_task(idx)
+
+        elif self.task == 'Object Detection':
+            y = self.load_bounding_boxes(idx)
+
         return idx, X, y

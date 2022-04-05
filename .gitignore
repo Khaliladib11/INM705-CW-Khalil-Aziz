@@ -3,7 +3,10 @@
 /.ipynb_checkpoints
 /__pycache__
 /Datasets/
+/models
 
 .jovianrc
 
 .idea
+
+.pth
