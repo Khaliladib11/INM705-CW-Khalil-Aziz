@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from PIL import Image
 import time
+import matplotlib.patches as patches
 
 import torch
 import torch.nn as nn
@@ -27,7 +28,7 @@ def load_coco_classes(file_path):
 
 
 # function to load Faster-RCNN model from torchvision repository
-def load_faster_rcnn(num_classes=3, pretrained=True, model_path='.'):
+def load_faster_rcnn(num_classes=3, pretrained=True, model_path=None):
     model_args = {
         'pretrained': pretrained,
         'pretrained_backbone': pretrained,
@@ -37,6 +38,8 @@ def load_faster_rcnn(num_classes=3, pretrained=True, model_path='.'):
         'box_batch_size_per_image': 256}
 
     model = torchvision.models.detection.fasterrcnn_resnet50_fpn(**model_args)
+    if model_path is not None and pretrained is False:
+        model.load_state_dict(torch.load(model_path))
     model.eval()
 
     # get number of input features for the classifier
@@ -75,7 +78,7 @@ def load_model(model, checkpoint_path):
     return epoch, model, training_loss, validation_loss
 
 
-def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None):
+def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None, show_every=1000):
     model.to(device)
     if load_checkpoint:
         e, model, training_loss, validation_loss = load_model(model, load_checkpoint)
@@ -119,9 +122,19 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
                 optimizer.step()
                 #print(total_loss.item())
                 train_epoch_loss += total_loss.item()
-            train_epoch_loss /= len(train_loader)
 
-            training_loss.append(train_epoch_loss)
+            if i % show_every == 0:
+                state = "Epoch: {:15} || Step: {:15} || Average Training Loss: {:.4f}".format(
+                    '[{:d}/{:d}]'.format(epoch, epochs),
+                    '[{:d}/{:d}]'.format(i, len(train_loader)),
+                    train_epoch_loss / (i + 1))
+                print(state)
+                file.write(state + '\n')
+                file.flush()
+
+        train_epoch_loss /= len(train_loader)
+
+        training_loss.append(train_epoch_loss)
 
         model.eval()
 
@@ -146,9 +159,18 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
                 val_epoch_loss += val_loss.item()
 
-            val_epoch_loss /= len(val_loader)
+            if i % show_every == 0:
+                state = "Epoch: {:15} || Step: {:15} || Average Validation Loss: {:.4f}".format(
+                    '[{:d}/{:d}]'.format(epoch, epochs),
+                    '[{:d}/{:d}]'.format(i, len(val_loader)),
+                    val_epoch_loss / (i + 1))
+                print(state)
+                file.write(state + '\n')
+                file.flush()
 
-            val_epoch_loss.append(val_epoch_loss)
+        val_epoch_loss /= len(val_loader)
+
+        val_epoch_loss.append(val_epoch_loss)
 
         epoch_time = (time.time() - start_time) / 60 ** 1
 
@@ -164,6 +186,28 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
     file.close()
     return training_loss, validation_loss
 
+
+def predict(model, img):
+    model.eval()
+    #img = Image.open(img)
+    img = np.array(img)
+    img_tensor = transforms.ToTensor()(img)
+    out = model([img_tensor])
+    scores = out[0]['scores'].detach().numpy()
+    bboxes = out[0]['boxes'].detach().numpy()
+    classes = out[0]['labels'].detach().numpy()
+    print(scores)
+    fig, ax = plt.subplots()
+    ax.imshow(img)
+    for i in range(len(classes)):
+        if scores[i] > 0.75:
+            bbox = bboxes[i]
+            rect = patches.Rectangle((bbox[0],bbox[1]),bbox[2]-bbox[0],bbox[3]-bbox[1], edgecolor='r', facecolor="none")
+            ax.add_patch(rect)
+            #ax.text((bbox[0]+bbox[2])/2 - 30, bbox[1]-5, pascal_voc_classes_names[i], c='r')
+
+    plt.axis('off')
+    plt.show()
 
 # function to plot the training loss vs validation loss
 def plot_loss(training_loss, validation_loss):
