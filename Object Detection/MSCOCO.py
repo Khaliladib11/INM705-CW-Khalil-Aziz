@@ -39,7 +39,8 @@ class MSCOCO(data.Dataset):
 
             # if we pass the annotations as params, just load them and save time
             if annotation_json_path:
-                assert annotation_json_path.endswith('train_annotation.json'), f"You selected {stage} phase, upload Train annotations."
+                assert annotation_json_path.endswith(
+                    'train_annotation.json'), f"You selected {stage} phase, upload Train annotations."
                 self.annotations = json.load(open(annotation_json_path))
             # if no, load them using the get annotations method
             else:
@@ -52,7 +53,8 @@ class MSCOCO(data.Dataset):
                                                 'annotations_trainval2017/annotations/instances_val2017.json')
 
             if annotation_json_path:
-                assert annotation_json_path.endswith('val_annotation.json'), f"You selected {stage} phase, upload {stage} annotations."
+                assert annotation_json_path.endswith(
+                    'val_annotation.json'), f"You selected {stage} phase, upload {stage} annotations."
                 self.annotations = json.load(open(annotation_json_path))
             # if no, load them using the get annotations method
             else:
@@ -72,12 +74,15 @@ class MSCOCO(data.Dataset):
     # helper method to create two dict for the target objects
     # index to class and class to index
     def _annotation_helper(self):
-
+        # TODO : Check idx
         self.class_to_idx = {}
         self.idx_to_class = {}
+        self.coco_to_idx = {}
         for cls in self.target_classes:
             self.class_to_idx[cls] = self.list_of_classes[cls]
             self.idx_to_class[self.list_of_classes[cls]] = cls
+            # self.class_to_idx[cls] = self.target_classes.index(cls)
+            # self.idx_to_class[self.target_classes.index(cls)] = cls
 
     # extract images file names from annotations
     def get_imgs(self):
@@ -143,18 +148,18 @@ class MSCOCO(data.Dataset):
             box_coco = annotation[0]
             box = [box_coco[0], box_coco[1], box_coco[0] + box_coco[2], box_coco[1] + box_coco[3]]
             bboxes.append(box)
-            classes.append(annotation[1])
+            classes.append(self.target_classes.index(self.idx_to_class[annotation[1]]))
 
         label['labels'] = torch.tensor(classes)
-        label['boxes'] = torch.tensor(bboxes)
-
+        label['boxes'] = torch.tensor(bboxes, dtype=torch.float32)
         return label
 
     # method to display an image with the corresponding bounding boxes and classes
     def display_img(self, idx):
         img = self.load_img(idx, False)  # load the image
-        label = self.get_bboxes(idx)  # get the bouding boxes
-        classes = [self.idx_to_class[cls] for cls in label['labels'].numpy()]  # get classes
+        label = self.get_bboxes(idx)  # get the bounding boxes
+        classes = [self.target_classes[idx] for idx in label['labels'].numpy()]  # get classes
+        print(classes)
         bboxes = label['boxes']
 
         color_map = ['b', 'r', 'y', 'g']  # color map, to draw bounding box with different color for different object
@@ -170,7 +175,6 @@ class MSCOCO(data.Dataset):
                                      edgecolor=color_map[class_],
                                      facecolor="none")
             ax.add_patch(rect)
-            #print(classes[i])
 
         plt.axis('off')
         plt.show()
@@ -181,5 +185,4 @@ class MSCOCO(data.Dataset):
     def __getitem__(self, idx):
         X = self.load_img(idx)
         y = self.get_bboxes(idx)
-
         return idx, X, y
