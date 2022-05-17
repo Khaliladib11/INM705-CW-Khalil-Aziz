@@ -78,7 +78,8 @@ def load_model(model, checkpoint_path):
     return epoch, model, training_loss, validation_loss
 
 
-def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None, show_every=1000):
+def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None,
+                show_every=1000):
     model.to(device)
     if load_checkpoint:
         e, model, training_loss, validation_loss = load_model(model, load_checkpoint)
@@ -114,13 +115,15 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
             targets.append(lab)
 
             if len(targets) > 0:
-                loss = model(images, targets)
+                t_loss = model(images, targets)
                 total_loss = 0
-                for k in loss.keys():
-                    total_loss += loss[k]
+                # print(loss)
+                # for k in loss.keys():
+                #    total_loss += loss[k]
+                total_loss = sum(loss for loss in t_loss.values())
                 total_loss.backward()
                 optimizer.step()
-                #print(total_loss.item())
+                # print(total_loss.item())
                 train_epoch_loss += total_loss.item()
 
             if i % show_every == 0:
@@ -136,11 +139,11 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         training_loss.append(train_epoch_loss)
 
-        model.eval()
+        # model.eval()
 
         for i, batch in enumerate(val_loader):
             idx, X, y = batch
-            X, y = X.to(device), y.to(device)
+            X, y['labels'], y['boxes'] = X.to(device), y['labels'].to(device), y['boxes'].to(device)
 
             model.zero_grad()
             images = [im for im in X]
@@ -152,11 +155,17 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
             targets.append(lab)
 
             if len(targets) > 0:
+                """
                 loss = model(images, targets)
                 val_loss = 0
+                #print(loss)
                 for k in loss.keys():
                     val_loss += loss[k]
+                """
+                with torch.no_grad():
+                    v_loss = model(images, targets)
 
+                val_loss = sum(loss for loss in v_loss.values())
                 val_epoch_loss += val_loss.item()
 
             if i % show_every == 0:
@@ -170,7 +179,7 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         val_epoch_loss /= len(val_loader)
 
-        val_epoch_loss.append(val_epoch_loss)
+        validation_loss.append(val_epoch_loss)
 
         epoch_time = (time.time() - start_time) / 60 ** 1
 
@@ -187,27 +196,29 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
     return training_loss, validation_loss
 
 
-def predict(model, img):
+def predict(model, img, device):
     model.eval()
-    #img = Image.open(img)
+    # img = Image.open(img)
     img = np.array(img)
-    img_tensor = transforms.ToTensor()(img)
+    img_tensor = transforms.ToTensor()(img).to(device)
     out = model([img_tensor])
-    scores = out[0]['scores'].detach().numpy()
-    bboxes = out[0]['boxes'].detach().numpy()
-    classes = out[0]['labels'].detach().numpy()
+    scores = out[0]['scores'].cpu().detach().numpy()
+    bboxes = out[0]['boxes'].cpu().detach().numpy()
+    classes = out[0]['labels'].cpu().detach().numpy()
     print(scores)
     fig, ax = plt.subplots()
     ax.imshow(img)
     for i in range(len(classes)):
         if scores[i] > 0.75:
             bbox = bboxes[i]
-            rect = patches.Rectangle((bbox[0],bbox[1]),bbox[2]-bbox[0],bbox[3]-bbox[1], edgecolor='r', facecolor="none")
+            rect = patches.Rectangle((bbox[0], bbox[1]), bbox[2] - bbox[0], bbox[3] - bbox[1], edgecolor='r',
+                                     facecolor="none")
             ax.add_patch(rect)
-            #ax.text((bbox[0]+bbox[2])/2 - 30, bbox[1]-5, pascal_voc_classes_names[i], c='r')
+            # ax.text((bbox[0]+bbox[2])/2 - 30, bbox[1]-5, pascal_voc_classes_names[i], c='r')
 
     plt.axis('off')
     plt.show()
+
 
 # function to plot the training loss vs validation loss
 def plot_loss(training_loss, validation_loss):
