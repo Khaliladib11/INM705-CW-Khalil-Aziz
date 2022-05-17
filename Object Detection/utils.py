@@ -196,7 +196,8 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
     return training_loss, validation_loss
 
 
-def predict(model, img, device):
+def predict(model, img, target_classes, device):
+    model.to(device)
     model.eval()
     # img = Image.open(img)
     img = np.array(img)
@@ -205,16 +206,16 @@ def predict(model, img, device):
     scores = out[0]['scores'].cpu().detach().numpy()
     bboxes = out[0]['boxes'].cpu().detach().numpy()
     classes = out[0]['labels'].cpu().detach().numpy()
-    print(scores)
     fig, ax = plt.subplots()
     ax.imshow(img)
+    color_map = ['b', 'r', 'y', 'g']
     for i in range(len(classes)):
         if scores[i] > 0.75:
             bbox = bboxes[i]
-            rect = patches.Rectangle((bbox[0], bbox[1]), bbox[2] - bbox[0], bbox[3] - bbox[1], edgecolor='r',
-                                     facecolor="none")
+            rect = patches.Rectangle((bbox[0], bbox[1]), bbox[2] - bbox[0], bbox[3] - bbox[1],
+                                     edgecolor=color_map[classes[i]], facecolor="none")
             ax.add_patch(rect)
-            # ax.text((bbox[0]+bbox[2])/2 - 30, bbox[1]-5, pascal_voc_classes_names[i], c='r')
+            ax.text((bbox[0] + bbox[2]) / 2 - 30, bbox[1] - 5, target_classes[classes[i]], c=color_map[classes[i]])
 
     plt.axis('off')
     plt.show()
