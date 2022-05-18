@@ -139,6 +139,7 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         training_loss.append(train_epoch_loss)
 
+        """
         # model.eval()
 
         for i, batch in enumerate(val_loader):
@@ -155,13 +156,11 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
             targets.append(lab)
 
             if len(targets) > 0:
-                """
                 loss = model(images, targets)
                 val_loss = 0
                 #print(loss)
                 for k in loss.keys():
                     val_loss += loss[k]
-                """
                 with torch.no_grad():
                     v_loss = model(images, targets)
 
@@ -180,14 +179,20 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
         val_epoch_loss /= len(val_loader)
 
         validation_loss.append(val_epoch_loss)
-
+        """
         epoch_time = (time.time() - start_time) / 60 ** 1
 
-        state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
-            .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
+        # state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
+        #    .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
 
+        state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
+            .format(epoch, epochs, train_epoch_loss, epoch_time)
+        print(100 * "*")
         print(state)
+        print(100 * "*")
+        file.write(100 * "*" + '\n')
         file.write(state + '\n')
+        file.write(100 * "*" + '\n')
         file.flush()
 
         save_model(model, epoch, training_loss, validation_loss, checkpoint_path)
