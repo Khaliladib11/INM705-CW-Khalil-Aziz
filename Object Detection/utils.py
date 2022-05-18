@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from torchvision import transforms
-from torch.utils import data
+from torchvision.models.detection import FasterRCNN
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 
@@ -27,25 +27,35 @@ def load_coco_classes(file_path):
     return coco_classes, coco_object_categories
 
 
-# function to load Faster-RCNN model from torchvision repository
-def load_faster_rcnn(num_classes=3, pretrained=True, model_path=None):
+# function to load Faster-RCNN model from torchvision repository takes as input the resnetbackbone we want to use,
+# the number of classes we want to classify (number of classes plus background) pretrained ad pretrained backbone two
+# boolean params, and model path if we want to load the weight manually.
+def load_faster_rcnn(backbone="resnet50", num_classes=3, pretrained=True, pretrained_backbone=True, model_path=None):
+    assert backbone in ['resnet50', 'resnet101', 'resnet152'], "Choose backbone from ['resnet50', 'resnet101', 'resnet152']"
     model_args = {
         'pretrained': pretrained,
-        'pretrained_backbone': pretrained,
+        'pretrained_backbone': pretrained_backbone,
         'box_score_thresh': 0.5,
         'num_classes': 91,
         'rpn_batch_size_per_image': 256,
         'box_batch_size_per_image': 256}
+    if backbone == 'resnet50':
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(**model_args)
+        if model_path is not None and pretrained is False:
+            model.load_state_dict(torch.load(model_path))
+        model.eval()
 
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(**model_args)
-    if model_path is not None and pretrained is False:
-        model.load_state_dict(torch.load(model_path))
-    model.eval()
+        # get number of input features for the classifier
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        # replace the pre-trained head with a new one
+        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
-    # get number of input features for the classifier
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    # replace the pre-trained head with a new one
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    else:
+        resnet_backbone = torchvision.models.detection.backbone_utils.resnet_fpn_backbone(
+            backbone,
+            pretrained=pretrained_backbone)
+        model = FasterRCNN(resnet_backbone, num_classes=num_classes)
+        model.eval()
 
     return model
 
@@ -139,7 +149,6 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         training_loss.append(train_epoch_loss)
 
-        """
         # model.eval()
 
         for i, batch in enumerate(val_loader):
@@ -179,14 +188,15 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
         val_epoch_loss /= len(val_loader)
 
         validation_loss.append(val_epoch_loss)
-        """
+
         epoch_time = (time.time() - start_time) / 60 ** 1
 
-        # state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
-        #    .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
+        state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
+            .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
 
-        state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
-            .format(epoch, epochs, train_epoch_loss, epoch_time)
+        #state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
+        #    .format(epoch, epochs, train_epoch_loss, epoch_time)
+
         print(100 * "*")
         print(state)
         print(100 * "*")
