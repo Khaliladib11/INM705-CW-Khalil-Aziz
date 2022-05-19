@@ -10,7 +10,7 @@ import torch
 import torch.nn as nn
 import torchvision
 from torchvision import transforms
-from torch.utils import data
+from torchvision.models.detection import FasterRCNN
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
 
 
@@ -27,25 +27,35 @@ def load_coco_classes(file_path):
     return coco_classes, coco_object_categories
 
 
-# function to load Faster-RCNN model from torchvision repository
-def load_faster_rcnn(num_classes=3, pretrained=True, model_path=None):
+# function to load Faster-RCNN model from torchvision repository takes as input the resnetbackbone we want to use,
+# the number of classes we want to classify (number of classes plus background) pretrained ad pretrained backbone two
+# boolean params, and model path if we want to load the weight manually.
+def load_faster_rcnn(backbone="resnet50", num_classes=3, pretrained=True, pretrained_backbone=True, model_path=None):
+    assert backbone in ['resnet50', 'resnet101', 'resnet152'], "Choose backbone from ['resnet50', 'resnet101', 'resnet152']"
     model_args = {
         'pretrained': pretrained,
-        'pretrained_backbone': pretrained,
+        'pretrained_backbone': pretrained_backbone,
         'box_score_thresh': 0.5,
         'num_classes': 91,  # Shouldn't this be equal to num_classes(the argument to the function)?
         'rpn_batch_size_per_image': 256,
         'box_batch_size_per_image': 256}
+    if backbone == 'resnet50':
+        model = torchvision.models.detection.fasterrcnn_resnet50_fpn(**model_args)
+        if model_path is not None and pretrained is False:
+            model.load_state_dict(torch.load(model_path))
+        model.eval()
 
-    model = torchvision.models.detection.fasterrcnn_resnet50_fpn(**model_args)
-    if model_path is not None and pretrained is False:
-        model.load_state_dict(torch.load(model_path))
-    model.eval()
+        # get number of input features for the classifier
+        in_features = model.roi_heads.box_predictor.cls_score.in_features
+        # replace the pre-trained head with a new one
+        model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
 
-    # get number of input features for the classifier
-    in_features = model.roi_heads.box_predictor.cls_score.in_features
-    # replace the pre-trained head with a new one
-    model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
+    else:
+        resnet_backbone = torchvision.models.detection.backbone_utils.resnet_fpn_backbone(
+            backbone,
+            pretrained=pretrained_backbone)
+        model = FasterRCNN(resnet_backbone, num_classes=num_classes)
+        model.eval()
 
     return model
 
@@ -78,7 +88,8 @@ def load_model(model, checkpoint_path):
     return epoch, model, training_loss, validation_loss
 
 
-def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None, show_every=1000):
+def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None,
+                show_every=1000):
     model.to(device)
     if load_checkpoint:
         e, model, training_loss, validation_loss = load_model(model, load_checkpoint)
@@ -114,13 +125,15 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
             targets.append(lab)
 
             if len(targets) > 0:
-                loss = model(images, targets)
+                t_loss = model(images, targets)
                 total_loss = 0
-                for k in loss.keys():
-                    total_loss += loss[k]
+                # print(loss)
+                # for k in loss.keys():
+                #    total_loss += loss[k]
+                total_loss = sum(loss for loss in t_loss.values())
                 total_loss.backward()
                 optimizer.step()
-                #print(total_loss.item())
+                # print(total_loss.item())
                 train_epoch_loss += total_loss.item()
 
             if i % show_every == 0:
@@ -136,11 +149,11 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         training_loss.append(train_epoch_loss)
 
-        model.eval()
+        # model.eval()
 
         for i, batch in enumerate(val_loader):
             idx, X, y = batch
-            X, y = X.to(device), y.to(device)
+            X, y['labels'], y['boxes'] = X.to(device), y['labels'].to(device), y['boxes'].to(device)
 
             model.zero_grad()
             images = [im for im in X]
@@ -154,9 +167,13 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
             if len(targets) > 0:
                 loss = model(images, targets)
                 val_loss = 0
+                #print(loss)
                 for k in loss.keys():
                     val_loss += loss[k]
+                with torch.no_grad():
+                    v_loss = model(images, targets)
 
+                val_loss = sum(loss for loss in v_loss.values())
                 val_epoch_loss += val_loss.item()
 
             if i % show_every == 0:
@@ -170,15 +187,22 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         val_epoch_loss /= len(val_loader)
 
-        val_epoch_loss.append(val_epoch_loss)
+        validation_loss.append(val_epoch_loss)
 
         epoch_time = (time.time() - start_time) / 60 ** 1
 
         state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
             .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
 
+        #state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
+        #    .format(epoch, epochs, train_epoch_loss, epoch_time)
+
+        print(100 * "*")
         print(state)
+        print(100 * "*")
+        file.write(100 * "*" + '\n')
         file.write(state + '\n')
+        file.write(100 * "*" + '\n')
         file.flush()
 
         save_model(model, epoch, training_loss, validation_loss, checkpoint_path)
@@ -187,27 +211,30 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
     return training_loss, validation_loss
 
 
-def predict(model, img):
+def predict(model, img, target_classes, device):
+    model.to(device)
     model.eval()
-    #img = Image.open(img)
+    # img = Image.open(img)
     img = np.array(img)
-    img_tensor = transforms.ToTensor()(img)
+    img_tensor = transforms.ToTensor()(img).to(device)
     out = model([img_tensor])
-    scores = out[0]['scores'].detach().numpy()
-    bboxes = out[0]['boxes'].detach().numpy()
-    classes = out[0]['labels'].detach().numpy()
-    print(scores)
+    scores = out[0]['scores'].cpu().detach().numpy()
+    bboxes = out[0]['boxes'].cpu().detach().numpy()
+    classes = out[0]['labels'].cpu().detach().numpy()
     fig, ax = plt.subplots()
     ax.imshow(img)
+    color_map = ['b', 'r', 'y', 'g']
     for i in range(len(classes)):
         if scores[i] > 0.75:
             bbox = bboxes[i]
-            rect = patches.Rectangle((bbox[0],bbox[1]),bbox[2]-bbox[0],bbox[3]-bbox[1], edgecolor='r', facecolor="none")
+            rect = patches.Rectangle((bbox[0], bbox[1]), bbox[2] - bbox[0], bbox[3] - bbox[1],
+                                     edgecolor=color_map[classes[i]], facecolor="none")
             ax.add_patch(rect)
-            #ax.text((bbox[0]+bbox[2])/2 - 30, bbox[1]-5, pascal_voc_classes_names[i], c='r')
+            ax.text((bbox[0] + bbox[2]) / 2 - 30, bbox[1] - 5, target_classes[classes[i]], c=color_map[classes[i]])
 
     plt.axis('off')
     plt.show()
+
 
 # function to plot the training loss vs validation loss
 def plot_loss(training_loss, validation_loss):

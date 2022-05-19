@@ -147,8 +147,9 @@ class MSCOCO(data.Dataset):
         for annotation in self.annotations[file_name]:
             box_coco = annotation[0]
             box = [box_coco[0], box_coco[1], box_coco[0] + box_coco[2], box_coco[1] + box_coco[3]]
-            bboxes.append(box)
-            classes.append(self.target_classes.index(self.idx_to_class[annotation[1]]))
+            if box[2] - box[0] > 0 and box[3] - box[1] > 0:
+                bboxes.append(box)
+                classes.append(self.target_classes.index(self.idx_to_class[annotation[1]]))
 
         label['labels'] = torch.tensor(classes)
         label['boxes'] = torch.tensor(bboxes, dtype=torch.float32)
