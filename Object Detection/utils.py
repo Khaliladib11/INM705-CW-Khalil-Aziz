@@ -33,7 +33,7 @@ def load_faster_rcnn(num_classes=3, pretrained=True, model_path=None):
         'pretrained': pretrained,
         'pretrained_backbone': pretrained,
         'box_score_thresh': 0.5,
-        'num_classes': 91,
+        'num_classes': 91,  # Shouldn't this be equal to num_classes(the argument to the function)?
         'rpn_batch_size_per_image': 256,
         'box_batch_size_per_image': 256}
 
