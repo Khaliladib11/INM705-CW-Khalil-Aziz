@@ -9,9 +9,12 @@ import matplotlib.patches as patches
 import torch
 import torch.nn as nn
 import torchvision
+import torchvision.ops.boxes as bops
 from torchvision import transforms
 from torchvision.models.detection import FasterRCNN
 from torchvision.models.detection.faster_rcnn import FastRCNNPredictor
+
+from torchmetrics.detection.mean_ap import MeanAveragePrecision
 
 
 # function to load ms coco classes from txt file in a suitable format
@@ -31,7 +34,8 @@ def load_coco_classes(file_path):
 # the number of classes we want to classify (number of classes plus background) pretrained ad pretrained backbone two
 # boolean params, and model path if we want to load the weight manually.
 def load_faster_rcnn(backbone="resnet50", num_classes=3, pretrained=True, pretrained_backbone=True, model_path=None):
-    assert backbone in ['resnet50', 'resnet101', 'resnet152'], "Choose backbone from ['resnet50', 'resnet101', 'resnet152']"
+    assert backbone in ['resnet50', 'resnet101',
+                        'resnet152'], "Choose backbone from ['resnet50', 'resnet101', 'resnet152']"
     model_args = {
         'pretrained': pretrained,
         'pretrained_backbone': pretrained_backbone,
@@ -167,7 +171,7 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
             if len(targets) > 0:
                 loss = model(images, targets)
                 val_loss = 0
-                #print(loss)
+                # print(loss)
                 for k in loss.keys():
                     val_loss += loss[k]
                 with torch.no_grad():
@@ -194,7 +198,7 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
         state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
             .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
 
-        #state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
+        # state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
         #    .format(epoch, epochs, train_epoch_loss, epoch_time)
 
         print(100 * "*")
@@ -246,3 +250,43 @@ def plot_loss(training_loss, validation_loss):
     plt.ylabel('Loss')
     plt.grid(True)
     plt.show()
+
+
+################################################## Evaluation ##################################################
+
+# method to calculate the intersection over union between two boxes, takes as input two lists, returns iou
+def get_iou(box1, box2):
+    assert box1[0] > box1[2], "x0 > x1 in Box1, How is that possible?"
+    assert box1[1] > box1[3], "y0 > y1 in Box1, How is that possible?"
+    assert box2[0] > box2[2], "x0 > x1 in Box2, How is that possible?"
+    assert box2[1] > box2[3], "y0 > y1 in Box2, How is that possible?"
+
+    box1 = torch.tensor([box1], dtype=torch.float)
+    box2 = torch.tensor([box2], dtype=torch.float)
+    iou = bops.box_iou(box1, box2)
+    return iou
+
+
+def evaluate_mAP(model, loader, device):
+    model.to(device)
+    model.eval()
+    metric = MeanAveragePrecision()
+    for i, batch in enumerate(loader):
+        idx, X, y = batch
+        X, y['labels'], y['boxes'] = X.to(device), y['labels'].to(device), y['boxes'].to(device)
+
+        model.zero_grad()
+        images = [im for im in X]
+
+        targets = []
+        lab = {}
+        lab['boxes'] = y['boxes'].squeeze_(0)
+        lab['labels'] = y['labels'].squeeze_(0)
+        targets.append(lab)
+
+        if len(targets) > 0:
+            with torch.no_grad():
+                pred = model(images, targets)
+                metric.update(pred, [lab])
+
+    return metric.compute()['map']
