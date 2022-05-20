@@ -232,12 +232,14 @@ def predict(model, img, target_classes, device):
     ax.imshow(img)
     color_map = ['b', 'r', 'y', 'g']
     for i in range(len(classes)):
-        if scores[i] > 0.75:
+        if scores[i] > 0.9:
             bbox = bboxes[i]
             rect = patches.Rectangle((bbox[0], bbox[1]), bbox[2] - bbox[0], bbox[3] - bbox[1],
                                      edgecolor=color_map[classes[i]], facecolor="none")
             ax.add_patch(rect)
-            ax.text((bbox[0] + bbox[2]) / 2 - 30, bbox[1] - 5, target_classes[classes[i]], c=color_map[classes[i]])
+            # ax.text((bbox[0] + bbox[2]) / 2 - 30, bbox[1] - 5, target_classes[classes[i]], c=color_map[classes[i]])
+            ax.text((bbox[0] + bbox[2]) / 2 - 30, bbox[1] - 5, target_classes[classes[i]],
+                    bbox=dict(facecolor=color_map[classes[i]], edgecolor='black'))
 
     plt.axis('off')
     plt.show()
@@ -308,4 +310,25 @@ def evaluate_mAP(model, loader, device):
                 if len(pred[0]['boxes']) > 0:
                     metric.update(pred, [lab])
 
-    return metric.compute()
+    mAPs = metric.compute()
+
+    print("IoU metric: bbox")
+    print(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area=   all | maxDets=100 ] = {mAPs['map']}")
+    print(f"Average Precision  (AP) @[ IoU=0.50      | area=   all | maxDets=100 ] = {mAPs['map_50']}")
+    print(f"Average Precision  (AP) @[ IoU=0.75      | area=   all | maxDets=100 ] = {mAPs['map_75']}")
+    print(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= small | maxDets=100 ] = {mAPs['map_small']}")
+    print(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= medium  | maxDets=100 ] = {mAPs['map_medium']}")
+    print(f"Average Precision  (AP) @[ IoU=0.50:0.95 | area= large | maxDets=100 ] = {mAPs['map_large']}")
+    return mAPs
+
+
+def compare_mAP(mAPs, metric, titles):
+    assert metric in ['map', 'map_50', 'map_75', 'map_small', 'map_medium', 'map_small', 'map_large']
+    x = []
+    y = []
+    for i in range(len(mAPs)):
+        x.append(titles[i])
+        y.append(mAPs[i][metric])
+
+    plt.bar(x, y)
+    plt.show()
