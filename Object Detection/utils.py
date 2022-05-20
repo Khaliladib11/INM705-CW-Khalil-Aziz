@@ -76,7 +76,7 @@ def save_model(model, epoch, training_loss, validation_loss, checkpoint_path):
         'epoch': epoch,
         'model': model.state_dict(),
         'training_loss': training_loss,
-        'validation_loss': validation_loss,
+        # 'validation_loss': validation_loss,
     }, os.path.join(checkpoint_path, 'model.pth'))
 
 
@@ -87,19 +87,20 @@ def load_model(model, checkpoint_path):
     model.load_state_dict(checkpoint['model'])
     epoch = checkpoint['epoch']
     training_loss = checkpoint['training_loss']
-    validation_loss = checkpoint['validation_loss']
+    # validation_loss = checkpoint['validation_loss']
 
-    return epoch, model, training_loss, validation_loss
+    return epoch, model, training_loss
 
 
-def train_model(model, train_loader, val_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None,
+def train_model(model, train_loader, optimizer, epochs, device, checkpoint_path, load_checkpoint=None,
                 show_every=1000):
     model.to(device)
     if load_checkpoint:
-        e, model, training_loss, validation_loss = load_model(model, load_checkpoint)
+        # e, model, training_loss, validation_loss = load_model(model, load_checkpoint)
+        e, model, training_loss = load_model(model, load_checkpoint)
     else:
         training_loss = []
-        validation_loss = []
+        # validation_loss = []
         e = 0
 
     if not os.path.exists(checkpoint_path):
@@ -153,6 +154,7 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
 
         training_loss.append(train_epoch_loss)
 
+        """
         # model.eval()
 
         for i, batch in enumerate(val_loader):
@@ -192,14 +194,15 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
         val_epoch_loss /= len(val_loader)
 
         validation_loss.append(val_epoch_loss)
+        """
 
         epoch_time = (time.time() - start_time) / 60 ** 1
 
-        state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
-            .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
+        # state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Validation Loss: {3:.2f} || Time: {4:f}" \
+        #    .format(epoch, epochs, train_epoch_loss, val_epoch_loss, epoch_time)
 
-        # state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
-        #    .format(epoch, epochs, train_epoch_loss, epoch_time)
+        state = "Epoch: [{0:d}/{1:d}] || Training Loss = {2:.2f} || Time: {4:f}" \
+            .format(epoch, epochs, train_epoch_loss, epoch_time)
 
         print(100 * "*")
         print(state)
@@ -209,10 +212,10 @@ def train_model(model, train_loader, val_loader, optimizer, epochs, device, chec
         file.write(100 * "*" + '\n')
         file.flush()
 
-        save_model(model, epoch, training_loss, validation_loss, checkpoint_path)
+        save_model(model, epoch, training_loss, checkpoint_path)
 
     file.close()
-    return training_loss, validation_loss
+    return training_loss
 
 
 def predict(model, img, target_classes, device):
@@ -237,6 +240,21 @@ def predict(model, img, target_classes, device):
             ax.text((bbox[0] + bbox[2]) / 2 - 30, bbox[1] - 5, target_classes[classes[i]], c=color_map[classes[i]])
 
     plt.axis('off')
+    plt.show()
+
+
+# compare different models, takes as input training losses list and titles
+def compare_models(training_models_loses, titles):
+    assert len(training_models_loses) == len(titles), "Length of training list and titles list have to be equals."
+
+    for i in range(len(training_models_loses)):
+        plt.plot(training_models_loses[i], label=titles[i])
+
+    plt.legend(loc='upper right')
+    plt.title('Comparing Object Detection with different Resnet backbone')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.grid(True)
     plt.show()
 
 
@@ -287,6 +305,7 @@ def evaluate_mAP(model, loader, device):
         if len(targets) > 0:
             with torch.no_grad():
                 pred = model(images, targets)
-                metric.update(pred, [lab])
+                if len(pred[0]['boxes']) > 0:
+                    metric.update(pred, [lab])
 
-    return metric.compute()['map']
+    return metric.compute()
